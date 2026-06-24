@@ -1,0 +1,3 @@
+pyrotgfork==2.2.24
+TgCrypto==1.2.5
+

@@ -1,0 +1,122 @@
+name: Telegram PDF Mail
+
+on:
+  schedule:
+    - cron: "10 15 * * *"
+  workflow_dispatch:
+    inputs:
+      scan_limit:
+        description: "How many recent channel messages to scan"
+        required: false
+        default: "200"
+
+concurrency:
+  group: telegram-pdf-mail
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  scan-and-mail:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Scan Telegram PDFs
+        id: scan
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
+          TELEGRAM_SESSION_FILE_B64: ${{ secrets.TELEGRAM_SESSION_FILE_B64 }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || vars.TELEGRAM_CHAT_ID }}
+          MATCH_REGEX: ${{ secrets.MATCH_REGEX || vars.MATCH_REGEX }}
+          SCAN_LIMIT: ${{ github.event.inputs.scan_limit || vars.SCAN_LIMIT || '200' }}
+          LOOKBACK_MESSAGES: ${{ vars.LOOKBACK_MESSAGES || '30' }}
+          DISCUSSION_REPLY_LIMIT: ${{ vars.DISCUSSION_REPLY_LIMIT || '100' }}
+          MATCH_IGNORE_CASE: ${{ vars.MATCH_IGNORE_CASE || 'true' }}
+        run: |
+          python scripts/scan_telegram_pdfs.py
+          count="$(python - <<'PY'
+          import json
+          with open('run/pending-mails.json', encoding='utf-8') as f:
+              print(len(json.load(f).get('items', [])))
+          PY
+          )"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" -gt 0 ]; then
+            echo "has_items=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_items=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout action-send-mail
+        if: steps.scan.outputs.has_items == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: dawidd6/action-send-mail
+          ref: v6
+          path: .actions/action-send-mail
+
+      - name: Set up Node.js for action-send-mail
+        if: steps.scan.outputs.has_items == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install action-send-mail dependencies
+        if: steps.scan.outputs.has_items == 'true'
+        working-directory: .actions/action-send-mail
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --omit=dev
+          else
+            npm install --omit=dev
+          fi
+
+      - name: Send one email per PDF
+        id: send
+        if: steps.scan.outputs.has_items == 'true'
+        env:
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT || '465' }}
+          SMTP_SECURE: ${{ secrets.SMTP_SECURE || 'true' }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM || vars.MAIL_FROM }}
+          MAIL_TO: ${{ secrets.MAIL_TO || vars.MAIL_TO }}
+          MAIL_CC: ${{ secrets.MAIL_CC }}
+          MAIL_BCC: ${{ secrets.MAIL_BCC }}
+          MAIL_SUBJECT_PREFIX: ${{ vars.MAIL_SUBJECT_PREFIX || 'Telegram PDF' }}
+          ZIP_THRESHOLD_MB: ${{ vars.ZIP_THRESHOLD_MB || '45' }}
+          SMTP_MAX_ATTACHMENT_MB: ${{ vars.SMTP_MAX_ATTACHMENT_MB || '0' }}
+        run: python scripts/send_pending_mail.py
+
+      - name: Finalize scan state
+        if: always() && steps.scan.outcome == 'success'
+        run: python scripts/finalize_state.py
+
+      - name: Persist scan state
+        if: always() && steps.scan.outcome == 'success'
+        run: |
+          cp run/final-state.json state/pdf-mail-state.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/pdf-mail-state.json
+          if git diff --cached --quiet; then
+            echo "No state changes to commit."
+          else
+            git commit -m "Update Telegram PDF mail state"
+            git push
+          fi

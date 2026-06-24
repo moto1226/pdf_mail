@@ -1,0 +1,9 @@
+downloads/
+run/
+sessions/
+.actions/
+*.session
+*.session-journal
+__pycache__/
+.pytest_cache/
+.venv/
