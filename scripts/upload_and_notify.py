@@ -1,15 +1,13 @@
 import json
-import mimetypes
 import os
 import re
+import shutil
 import smtplib
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
-
-import boto3
-from botocore.config import Config
+from urllib.parse import quote
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -52,65 +50,46 @@ def safe_key_part(value: Any) -> str:
     return re.sub(r"[^A-Za-z0-9._=-]+", "_", str(value)).strip("_") or "unknown"
 
 
-def build_object_key(item: dict[str, Any]) -> str:
-    prefix = env("R2_KEY_PREFIX", "telegram-pdfs/").strip("/")
+def repo_relative_pdf_path(item: dict[str, Any]) -> Path:
+    base_dir = env("PDF_REPO_DIR", "files").strip("/\\") or "files"
     file_name = safe_filename(item.get("file_name") or Path(item["path"]).name)
-    parts = [
-        prefix,
-        safe_key_part(item.get("chat_id", "chat")),
-        safe_key_part(item.get("source_message_id", "source")),
-        f"{safe_key_part(item.get('pdf_message_id', 'pdf'))}-{file_name}",
-    ]
-    return "/".join(part for part in parts if part)
+    return Path(base_dir) / safe_key_part(item.get("chat_id", "chat")) / safe_key_part(
+        item.get("source_message_id", "source")
+    ) / f"{safe_key_part(item.get('pdf_message_id', 'pdf'))}-{file_name}"
 
 
-def r2_client() -> Any:
-    required = ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET"]
-    missing = [name for name in required if not env(name)]
-    if missing:
-        raise RuntimeError(f"missing required R2 environment variable(s): {', '.join(missing)}")
-    endpoint = f"https://{env('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com"
-    return boto3.client(
-        "s3",
-        endpoint_url=endpoint,
-        aws_access_key_id=env("R2_ACCESS_KEY_ID"),
-        aws_secret_access_key=env("R2_SECRET_ACCESS_KEY"),
-        region_name="auto",
-        config=Config(signature_version="s3v4"),
-    )
+def public_base_url() -> str:
+    configured = env("PUBLIC_BASE_URL")
+    if configured:
+        return configured.rstrip("/")
+    repository = env("GITHUB_REPOSITORY", "moto1226/pdf_mail")
+    ref_name = env("GITHUB_REF_NAME", "main")
+    return f"https://raw.githubusercontent.com/{repository}/{ref_name}"
 
 
-def upload_and_sign(client: Any, item: dict[str, Any], expires_seconds: int) -> dict[str, Any]:
-    path = REPO_ROOT / item["path"]
-    if not path.exists():
-        raise RuntimeError(f"downloaded file is missing: {path}")
-    bucket = env("R2_BUCKET")
-    key = build_object_key(item)
-    content_type = mimetypes.guess_type(path.name)[0] or "application/pdf"
-    client.upload_file(
-        str(path),
-        bucket,
-        key,
-        ExtraArgs={
-            "ContentType": content_type,
-            "Metadata": {
-                "telegram-chat-id": str(item.get("chat_id", "")),
-                "telegram-source-message-id": str(item.get("source_message_id", "")),
-                "telegram-pdf-message-id": str(item.get("pdf_message_id", "")),
-            },
-        },
-    )
-    url = client.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": bucket, "Key": key},
-        ExpiresIn=expires_seconds,
-    )
+def public_url(path: Path) -> str:
+    normalized = path.as_posix()
+    return f"{public_base_url()}/{quote(normalized, safe='/')}"
+
+
+def copy_pdf_to_repo(item: dict[str, Any]) -> dict[str, Any]:
+    source = REPO_ROOT / item["path"]
+    if not source.exists():
+        raise RuntimeError(f"downloaded file is missing: {source}")
+    max_mb = env_int("MAX_REPO_FILE_MB", 95)
+    if max_mb > 0 and source.stat().st_size > max_mb * 1024 * 1024:
+        raise RuntimeError(f"{source.name} exceeds MAX_REPO_FILE_MB={max_mb}")
+
+    relative_path = repo_relative_pdf_path(item)
+    target = REPO_ROOT / relative_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
     return {
         "key": item["key"],
-        "object_key": key,
-        "url": url,
-        "file_name": item.get("file_name") or path.name,
-        "file_size": path.stat().st_size,
+        "repo_path": relative_path.as_posix(),
+        "url": public_url(relative_path),
+        "file_name": item.get("file_name") or source.name,
+        "file_size": target.stat().st_size,
         "chat_id": item.get("chat_id", ""),
         "source_message_id": item.get("source_message_id", ""),
         "pdf_message_id": item.get("pdf_message_id", ""),
@@ -128,18 +107,21 @@ def format_size(size: int) -> str:
     return f"{size} B"
 
 
-def build_body(uploaded: list[dict[str, Any]], expires_at: datetime) -> str:
+def build_body(files: list[dict[str, Any]]) -> str:
     lines = [
-        f"{len(uploaded)} Telegram PDF file(s) were uploaded to Cloudflare R2.",
-        f"Download links expire at: {expires_at.isoformat()}",
+        f"{len(files)} Telegram PDF file(s) were saved to the GitHub repository.",
+        "Download links are raw GitHub file links. They work without login only when the repository is public.",
+        "Links become available after this workflow commits the files.",
+        f"Generated at: {datetime.now(timezone.utc).isoformat()}",
         "",
     ]
-    for index, item in enumerate(uploaded, start=1):
+    for index, item in enumerate(files, start=1):
         match = item.get("matches", [{}])[0] if item.get("matches") else {}
         lines.extend(
             [
                 f"{index}. {item['file_name']}",
                 f"Size: {format_size(int(item['file_size']))}",
+                f"Repository path: {item['repo_path']}",
                 f"Chat: {item.get('chat_id', '')}",
                 f"Source message id: {item.get('source_message_id', '')}",
                 f"PDF message id: {item.get('pdf_message_id', '')}",
@@ -195,19 +177,15 @@ def main() -> None:
     items = manifest.get("items", [])
     write_sent_keys([])
     if not items:
-        print("no pending PDF files to upload")
+        print("no pending PDF files to save")
         return
 
-    expires_seconds = max(1, min(env_int("R2_URL_EXPIRES_SECONDS", 604800), 604800))
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_seconds)
-    client = r2_client()
-    uploaded = [upload_and_sign(client, item, expires_seconds) for item in items]
+    saved_files = [copy_pdf_to_repo(item) for item in items]
     subject_prefix = env("MAIL_SUBJECT_PREFIX", "Telegram PDF")
-    subject = f"{subject_prefix}: {len(uploaded)} new file(s)"
-    body = build_body(uploaded, expires_at)
-    send_email(subject, body)
-    write_sent_keys([item["key"] for item in uploaded])
-    print(f"uploaded {len(uploaded)} PDF file(s) and sent one notification email")
+    subject = f"{subject_prefix}: {len(saved_files)} new file(s)"
+    send_email(subject, build_body(saved_files))
+    write_sent_keys([item["key"] for item in saved_files])
+    print(f"saved {len(saved_files)} PDF file(s) and sent one notification email")
 
 
 if __name__ == "__main__":

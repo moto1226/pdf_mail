@@ -61,16 +61,13 @@ jobs:
             echo "has_items=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Upload PDFs to R2 and send notification
+      - name: Save PDFs to repository and send notification
         id: send
         if: steps.scan.outputs.has_items == 'true'
         env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          R2_KEY_PREFIX: ${{ vars.R2_KEY_PREFIX || 'telegram-pdfs/' }}
-          R2_URL_EXPIRES_SECONDS: ${{ vars.R2_URL_EXPIRES_SECONDS || '604800' }}
+          PDF_REPO_DIR: ${{ vars.PDF_REPO_DIR || 'files' }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          MAX_REPO_FILE_MB: ${{ vars.MAX_REPO_FILE_MB || '95' }}
           SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
           SMTP_PORT: ${{ secrets.SMTP_PORT || '465' }}
           SMTP_SECURE: ${{ secrets.SMTP_SECURE || 'true' }}
@@ -89,12 +86,17 @@ jobs:
         run: python scripts/finalize_state.py
 
       - name: Persist scan state
-        if: always() && steps.scan.outcome == 'success'
+        if: always() && steps.scan.outcome == 'success' && (steps.scan.outputs.has_items != 'true' || steps.send.outcome == 'success')
+        env:
+          PDF_REPO_DIR: ${{ vars.PDF_REPO_DIR || 'files' }}
         run: |
           cp run/final-state.json state/pdf-mail-state.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add state/pdf-mail-state.json
+          if [ -d "$PDF_REPO_DIR" ]; then
+            git add "$PDF_REPO_DIR"
+          fi
           if git diff --cached --quiet; then
             echo "No state changes to commit."
           else
