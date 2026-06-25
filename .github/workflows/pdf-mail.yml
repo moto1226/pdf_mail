@@ -78,7 +78,7 @@ jobs:
           MAIL_TO: ${{ secrets.MAIL_TO || vars.MAIL_TO }}
           MAIL_CC: ${{ secrets.MAIL_CC }}
           MAIL_BCC: ${{ secrets.MAIL_BCC }}
-          MAIL_SUBJECT_PREFIX: ${{ vars.MAIL_SUBJECT_PREFIX || 'Telegram PDF' }}
+          MAIL_SUBJECT_PREFIX: ${{ vars.MAIL_SUBJECT_PREFIX || 'PDF 更新' }}
         run: python scripts/upload_and_notify.py
 
       - name: Finalize scan state

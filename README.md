@@ -35,7 +35,7 @@ Set these in **Settings -> Secrets and variables -> Actions -> Variables** when 
 - `LOOKBACK_MESSAGES` defaults to `30`
 - `DISCUSSION_REPLY_LIMIT` defaults to `100`
 - `MATCH_IGNORE_CASE` defaults to `true`
-- `MAIL_SUBJECT_PREFIX` defaults to `Telegram PDF`
+- `MAIL_SUBJECT_PREFIX` defaults to `PDF 更新`
 - `PDF_REPO_DIR` defaults to `files`
 - `PUBLIC_BASE_URL` defaults to the current repository raw URL
 - `MAX_REPO_FILE_MB` defaults to `95`, to stay below GitHub's 100 MiB hard file limit

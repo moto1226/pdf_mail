@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import smtplib
+from html import escape
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
@@ -107,35 +108,85 @@ def format_size(size: int) -> str:
     return f"{size} B"
 
 
-def build_body(files: list[dict[str, Any]]) -> str:
+def first_match(item: dict[str, Any]) -> dict[str, Any]:
+    return item.get("matches", [{}])[0] if item.get("matches") else {}
+
+
+def display_location(value: Any) -> str:
+    return {"main": "主消息", "comment": "评论区"}.get(str(value), str(value))
+
+
+def generated_time() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def build_text_body(files: list[dict[str, Any]]) -> str:
     lines = [
-        f"{len(files)} Telegram PDF file(s) were saved to the GitHub repository.",
-        "Download links are raw GitHub file links. They work without login only when the repository is public.",
-        "Links become available after this workflow commits the files.",
-        f"Generated at: {datetime.now(timezone.utc).isoformat()}",
+        f"本次从 Telegram 匹配到 {len(files)} 个 PDF，文件已保存到 GitHub 仓库。",
+        "链接会在本次任务提交完成后生效。",
+        f"生成时间：{generated_time()}",
         "",
     ]
     for index, item in enumerate(files, start=1):
-        match = item.get("matches", [{}])[0] if item.get("matches") else {}
+        match = first_match(item)
         lines.extend(
             [
                 f"{index}. {item['file_name']}",
-                f"Size: {format_size(int(item['file_size']))}",
-                f"Repository path: {item['repo_path']}",
-                f"Chat: {item.get('chat_id', '')}",
-                f"Source message id: {item.get('source_message_id', '')}",
-                f"PDF message id: {item.get('pdf_message_id', '')}",
-                f"Matched in: {match.get('location', '')}",
-                f"Matched text: {match.get('matched_text', '')}",
-                f"Snippet: {match.get('snippet', '')}",
-                f"Download: {item['url']}",
+                f"文件大小：{format_size(int(item['file_size']))}",
+                f"仓库路径：{item['repo_path']}",
+                f"频道/群组：{item.get('chat_id', '')}",
+                f"来源消息 ID：{item.get('source_message_id', '')}",
+                f"PDF 消息 ID：{item.get('pdf_message_id', '')}",
+                f"匹配位置：{display_location(match.get('location', ''))}",
+                f"匹配内容：{match.get('matched_text', '')}",
+                f"上下文：{match.get('snippet', '')}",
+                f"下载链接：{item['url']}",
                 "",
             ]
         )
     return "\n".join(lines)
 
 
-def send_email(subject: str, body: str) -> None:
+def build_html_body(files: list[dict[str, Any]]) -> str:
+    generated_at = escape(generated_time())
+    cards = []
+    for index, item in enumerate(files, start=1):
+        match = first_match(item)
+        cards.append(
+            f"""
+            <section style="border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:0 0 16px 0;">
+              <h2 style="font-size:16px;margin:0 0 10px 0;color:#111827;">{index}. {escape(str(item['file_name']))}</h2>
+              <p style="margin:0 0 12px 0;">
+                <a href="{escape(str(item['url']), quote=True)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;padding:8px 14px;font-weight:600;">下载 PDF</a>
+              </p>
+              <table style="border-collapse:collapse;font-size:14px;color:#374151;">
+                <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">文件大小</td><td>{escape(format_size(int(item['file_size'])))}</td></tr>
+                <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">仓库路径</td><td>{escape(str(item['repo_path']))}</td></tr>
+                <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">频道/群组</td><td>{escape(str(item.get('chat_id', '')))}</td></tr>
+                <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">来源消息 ID</td><td>{escape(str(item.get('source_message_id', '')))}</td></tr>
+                <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">PDF 消息 ID</td><td>{escape(str(item.get('pdf_message_id', '')))}</td></tr>
+                <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">匹配位置</td><td>{escape(display_location(match.get('location', '')))}</td></tr>
+                <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">匹配内容</td><td>{escape(str(match.get('matched_text', '')))}</td></tr>
+              </table>
+              <p style="font-size:13px;color:#6b7280;line-height:1.5;margin:10px 0 0 0;">{escape(str(match.get('snippet', '')))}</p>
+            </section>
+            """
+        )
+    return f"""<!doctype html>
+<html>
+  <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,'Microsoft YaHei',sans-serif;color:#111827;line-height:1.5;">
+    <main style="max-width:760px;margin:0;padding:0;">
+      <h1 style="font-size:20px;margin:0 0 12px 0;">PDF 更新：{len(files)} 个新文件</h1>
+      <p style="margin:0 0 4px 0;">本次从 Telegram 匹配到 {len(files)} 个 PDF，文件已保存到 GitHub 仓库。</p>
+      <p style="margin:0 0 4px 0;color:#6b7280;">点击每个文件下方的“下载 PDF”即可打开文件。链接会在本次任务提交完成后生效。</p>
+      <p style="margin:0 0 20px 0;color:#6b7280;">生成时间：{generated_at}</p>
+      {''.join(cards)}
+    </main>
+  </body>
+</html>"""
+
+
+def send_email(subject: str, text_body: str, html_body: str) -> None:
     required = ["SMTP_SERVER", "SMTP_USERNAME", "SMTP_PASSWORD", "MAIL_FROM", "MAIL_TO"]
     missing = [name for name in required if not env(name)]
     if missing:
@@ -154,7 +205,8 @@ def send_email(subject: str, body: str) -> None:
     if cc_addrs:
         message["Cc"] = ", ".join(cc_addrs)
     message["Subject"] = subject
-    message.set_content(body)
+    message.set_content(text_body)
+    message.add_alternative(html_body, subtype="html")
 
     server = env("SMTP_SERVER")
     port = env_int("SMTP_PORT", 465)
@@ -181,9 +233,9 @@ def main() -> None:
         return
 
     saved_files = [copy_pdf_to_repo(item) for item in items]
-    subject_prefix = env("MAIL_SUBJECT_PREFIX", "Telegram PDF")
-    subject = f"{subject_prefix}: {len(saved_files)} new file(s)"
-    send_email(subject, build_body(saved_files))
+    subject_prefix = env("MAIL_SUBJECT_PREFIX", "PDF 更新")
+    subject = f"{subject_prefix}：{len(saved_files)} 个新文件"
+    send_email(subject, build_text_body(saved_files), build_html_body(saved_files))
     write_sent_keys([item["key"] for item in saved_files])
     print(f"saved {len(saved_files)} PDF file(s) and sent one notification email")
 
