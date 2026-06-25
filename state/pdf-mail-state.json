@@ -1,5 +1,14 @@
 {
   "version": 1,
-  "chats": {}
+  "chats": {
+    "QiKan2026": {
+      "last_message_id": 7208,
+      "processed": [
+        "QiKan2026:7040:AgADiSEAArR7YFQ",
+        "QiKan2026:7162:AgAD5CIAAs1rQFU",
+        "QiKan2026:95042:AgADsCIAAuH2gFU",
+        "QiKan2026:95508:AgADgSUAAlIIyFU"
+      ]
+    }
+  }
 }
-
