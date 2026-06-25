@@ -2,12 +2,17 @@
   "version": 1,
   "chats": {
     "QiKan2026": {
-      "last_message_id": 0,
+      "last_message_id": 7208,
       "processed": [
         "QiKan2026:7040:AgADiSEAArR7YFQ",
         "QiKan2026:7162:AgAD5CIAAs1rQFU",
         "QiKan2026:95042:AgADsCIAAuH2gFU",
-        "QiKan2026:95508:AgADgSUAAlIIyFU"
+        "QiKan2026:95508:AgADgSUAAlIIyFU",
+        "QiKan2026:94458:AgADBBwAAgYqaFU",
+        "QiKan2026:95128:AgADYScAAuH2iFU",
+        "QiKan2026:95130:AgADZycAAuH2iFU",
+        "QiKan2026:95397:AgAD-SIAAt8BuFU",
+        "QiKan2026:95698:AgADsx8AApop4VU"
       ]
     }
   }
