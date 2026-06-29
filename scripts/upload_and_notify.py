@@ -85,20 +85,12 @@ def copy_pdf_to_repo(item: dict[str, Any]) -> dict[str, Any]:
     source = REPO_ROOT / item["path"]
     if not source.exists():
         raise RuntimeError(f"downloaded file is missing: {source}")
+    source_size = source.stat().st_size
     max_mb = env_int("MAX_REPO_FILE_MB", 95)
-    if max_mb > 0 and source.stat().st_size > max_mb * 1024 * 1024:
-        raise RuntimeError(f"{source.name} exceeds MAX_REPO_FILE_MB={max_mb}")
-
-    relative_path = repo_relative_pdf_path(item)
-    target = REPO_ROOT / relative_path
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source, target)
-    return {
+    common = {
         "key": item["key"],
-        "repo_path": relative_path.as_posix(),
-        "url": public_url(relative_path),
         "file_name": item.get("file_name") or source.name,
-        "file_size": target.stat().st_size,
+        "file_size": source_size,
         "chat_id": item.get("chat_id", ""),
         "mail_to": item.get("mail_to", ""),
         "mail_cc": item.get("mail_cc", ""),
@@ -106,6 +98,26 @@ def copy_pdf_to_repo(item: dict[str, Any]) -> dict[str, Any]:
         "source_message_id": item.get("source_message_id", ""),
         "pdf_message_id": item.get("pdf_message_id", ""),
         "matches": item.get("matches", []),
+    }
+    if max_mb > 0 and source_size > max_mb * 1024 * 1024:
+        return {
+            **common,
+            "status": "skipped",
+            "repo_path": "",
+            "url": "",
+            "skip_reason": f"文件超过 MAX_REPO_FILE_MB={max_mb}，未保存到仓库",
+        }
+
+    relative_path = repo_relative_pdf_path(item)
+    target = REPO_ROOT / relative_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+    return {
+        **common,
+        "status": "saved",
+        "repo_path": relative_path.as_posix(),
+        "url": public_url(relative_path),
+        "file_size": target.stat().st_size,
     }
 
 
@@ -131,54 +143,88 @@ def generated_time() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def summary_counts(files: list[dict[str, Any]]) -> tuple[int, int]:
+    saved = sum(1 for item in files if item.get("status") == "saved")
+    return saved, len(files) - saved
+
+
+def summary_line(files: list[dict[str, Any]]) -> str:
+    saved, skipped = summary_counts(files)
+    if skipped:
+        return f"本次从 Telegram 匹配到 {len(files)} 个 PDF，其中 {saved} 个已保存到 GitHub 仓库，{skipped} 个因超过大小限制已跳过。"
+    return f"本次从 Telegram 匹配到 {len(files)} 个 PDF，文件已保存到 GitHub 仓库。"
+
+
 def build_text_body(files: list[dict[str, Any]]) -> str:
     lines = [
-        f"本次从 Telegram 匹配到 {len(files)} 个 PDF，文件已保存到 GitHub 仓库。",
+        summary_line(files),
         "链接会在本次任务提交完成后生效。",
         f"生成时间：{generated_time()}",
         "",
     ]
     for index, item in enumerate(files, start=1):
         match = first_match(item)
+        saved = item.get("status") == "saved"
         lines.extend(
             [
                 f"{index}. {item['file_name']}",
+                f"处理状态：{'已保存' if saved else '已跳过'}",
                 f"文件大小：{format_size(int(item['file_size']))}",
-                f"仓库路径：{item['repo_path']}",
+                f"仓库路径：{item['repo_path'] if saved else '未保存'}",
                 f"频道/群组：{item.get('chat_id', '')}",
                 f"来源消息 ID：{item.get('source_message_id', '')}",
                 f"PDF 消息 ID：{item.get('pdf_message_id', '')}",
                 f"匹配位置：{display_location(match.get('location', ''))}",
                 f"匹配内容：{match.get('matched_text', '')}",
                 f"上下文：{match.get('snippet', '')}",
-                f"下载链接：{item['url']}",
-                "",
+                f"下载链接：{item['url'] if saved else '未生成'}",
             ]
         )
+        if not saved:
+            lines.append(f"跳过原因：{item.get('skip_reason', '未保存到仓库')}")
+        lines.append("")
     return "\n".join(lines)
 
 
 def build_html_body(files: list[dict[str, Any]]) -> str:
     generated_at = escape(generated_time())
+    saved_count, skipped_count = summary_counts(files)
+    title = (
+        f"PDF 更新：{saved_count} 个可下载，{skipped_count} 个已跳过"
+        if skipped_count
+        else f"PDF 更新：{len(files)} 个新文件"
+    )
     cards = []
     for index, item in enumerate(files, start=1):
         match = first_match(item)
+        saved = item.get("status") == "saved"
+        action_html = (
+            f"""<a href="{escape(str(item['url']), quote=True)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;padding:8px 14px;font-weight:600;">下载 PDF</a>"""
+            if saved
+            else """<span style="display:inline-block;background:#f3f4f6;color:#6b7280;border-radius:6px;padding:8px 14px;font-weight:600;">已跳过</span>"""
+        )
+        repo_path = str(item["repo_path"]) if saved else "未保存"
+        skip_reason = ""
+        if not saved:
+            skip_reason = f"""<p style="font-size:13px;color:#b45309;line-height:1.5;margin:10px 0 0 0;">{escape(str(item.get('skip_reason', '未保存到仓库')))}</p>"""
         cards.append(
             f"""
             <section style="border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:0 0 16px 0;">
               <h2 style="font-size:16px;margin:0 0 10px 0;color:#111827;">{index}. {escape(str(item['file_name']))}</h2>
               <p style="margin:0 0 12px 0;">
-                <a href="{escape(str(item['url']), quote=True)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;padding:8px 14px;font-weight:600;">下载 PDF</a>
+                {action_html}
               </p>
               <table style="border-collapse:collapse;font-size:14px;color:#374151;">
+                <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">处理状态</td><td>{'已保存' if saved else '已跳过'}</td></tr>
                 <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">文件大小</td><td>{escape(format_size(int(item['file_size'])))}</td></tr>
-                <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">仓库路径</td><td>{escape(str(item['repo_path']))}</td></tr>
+                <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">仓库路径</td><td>{escape(repo_path)}</td></tr>
                 <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">频道/群组</td><td>{escape(str(item.get('chat_id', '')))}</td></tr>
                 <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">来源消息 ID</td><td>{escape(str(item.get('source_message_id', '')))}</td></tr>
                 <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">PDF 消息 ID</td><td>{escape(str(item.get('pdf_message_id', '')))}</td></tr>
                 <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">匹配位置</td><td>{escape(display_location(match.get('location', '')))}</td></tr>
                 <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">匹配内容</td><td>{escape(str(match.get('matched_text', '')))}</td></tr>
               </table>
+              {skip_reason}
               <p style="font-size:13px;color:#6b7280;line-height:1.5;margin:10px 0 0 0;">{escape(str(match.get('snippet', '')))}</p>
             </section>
             """
@@ -187,9 +233,9 @@ def build_html_body(files: list[dict[str, Any]]) -> str:
 <html>
   <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,'Microsoft YaHei',sans-serif;color:#111827;line-height:1.5;">
     <main style="max-width:760px;margin:0;padding:0;">
-      <h1 style="font-size:20px;margin:0 0 12px 0;">PDF 更新：{len(files)} 个新文件</h1>
-      <p style="margin:0 0 4px 0;">本次从 Telegram 匹配到 {len(files)} 个 PDF，文件已保存到 GitHub 仓库。</p>
-      <p style="margin:0 0 4px 0;color:#6b7280;">点击每个文件下方的“下载 PDF”即可打开文件。链接会在本次任务提交完成后生效。</p>
+      <h1 style="font-size:20px;margin:0 0 12px 0;">{escape(title)}</h1>
+      <p style="margin:0 0 4px 0;">{escape(summary_line(files))}</p>
+      <p style="margin:0 0 4px 0;color:#6b7280;">已保存：{saved_count} 个；已跳过：{skipped_count} 个。点击“下载 PDF”即可打开已保存文件。链接会在本次任务提交完成后生效。</p>
       <p style="margin:0 0 20px 0;color:#6b7280;">生成时间：{generated_at}</p>
       {''.join(cards)}
     </main>
@@ -251,12 +297,20 @@ def main() -> None:
         grouped.setdefault(recipient_tuple(item), []).append(item)
 
     for (mail_to, mail_cc, mail_bcc), group_files in grouped.items():
-        subject = f"{subject_prefix}：{len(group_files)} 个新文件"
+        saved_count, skipped_count = summary_counts(group_files)
+        if skipped_count:
+            subject = f"{subject_prefix}：{saved_count} 个可下载，{skipped_count} 个已跳过"
+        else:
+            subject = f"{subject_prefix}：{len(group_files)} 个新文件"
         send_email(subject, build_text_body(group_files), build_html_body(group_files), mail_to, mail_cc, mail_bcc)
         sent_keys.extend(item["key"] for item in group_files)
         write_sent_keys(sent_keys)
 
-    print(f"saved {len(saved_files)} PDF file(s) and sent {len(grouped)} notification email(s)")
+    saved_count, skipped_count = summary_counts(saved_files)
+    print(
+        f"saved {saved_count} PDF file(s), skipped {skipped_count} oversized file(s), "
+        f"and sent {len(grouped)} notification email(s)"
+    )
 
 
 if __name__ == "__main__":

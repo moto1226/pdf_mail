@@ -97,9 +97,10 @@ The default schedule is `10 15 * * *`, which runs once per day at 00:10 Japan ti
 The scanner writes a pending manifest to `run/pending-mails.json` and a proposed next state to `run/next-state.json`.
 
 - If no PDFs are pending, the workflow commits the new scan state.
-- If PDFs are pending, the workflow copies them into `files/`, generates raw GitHub download links, and sends one notification email.
+- If PDFs are pending, the workflow copies files within `MAX_REPO_FILE_MB` into `files/`, generates raw GitHub download links, and sends one notification email.
+- PDFs over `MAX_REPO_FILE_MB` are not committed to the repository. They are listed as skipped in the email and marked as processed only after that email is sent successfully.
 - After the notification succeeds, it commits the PDFs and the full next state.
-- If copying or SMTP notification fails, it does not commit the PDFs or mark them as processed, so a later run can retry.
+- If copying or SMTP notification fails, it does not commit new PDFs or mark unsent items as processed, so a later run can retry.
 
 `LOOKBACK_MESSAGES` rechecks recent channel messages so comments added after a previous scan can still be matched.
 
