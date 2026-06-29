@@ -91,16 +91,38 @@ jobs:
         env:
           PDF_REPO_DIR: ${{ vars.PDF_REPO_DIR || 'files' }}
         run: |
-          cp run/final-state.json state/pdf-mail-state.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state/pdf-mail-state.json
+          git config http.postBuffer 524288000
+
+          push_with_retry() {
+            for attempt in 1 2 3; do
+              if git push; then
+                return 0
+              fi
+              echo "git push failed on attempt $attempt; retrying..."
+              sleep $((attempt * 10))
+              git pull --rebase --autostash
+            done
+            return 1
+          }
+
           if [ -d "$PDF_REPO_DIR" ]; then
-            git add "$PDF_REPO_DIR"
+            mapfile -d '' pdf_files < <(find "$PDF_REPO_DIR" -type f -print0 | sort -z)
+            for pdf_file in "${pdf_files[@]}"; do
+              if [ -n "$(git status --porcelain -- "$pdf_file")" ]; then
+                git add "$pdf_file"
+                git commit -m "Add Telegram PDF file"
+                push_with_retry
+              fi
+            done
           fi
+
+          cp run/final-state.json state/pdf-mail-state.json
+          git add state/pdf-mail-state.json
           if git diff --cached --quiet; then
             echo "No state changes to commit."
           else
             git commit -m "Update Telegram PDF mail state"
-            git push
+            push_with_retry
           fi

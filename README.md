@@ -100,6 +100,7 @@ The scanner writes a pending manifest to `run/pending-mails.json` and a proposed
 - If PDFs are pending, the workflow copies files within `MAX_REPO_FILE_MB` into `files/`, generates raw GitHub download links, and sends one notification email.
 - PDFs over `MAX_REPO_FILE_MB` are not committed to the repository. They are listed as skipped in the email and marked as processed only after that email is sent successfully.
 - After the notification succeeds, it commits the PDFs and the full next state.
+- PDF files are committed and pushed one at a time, then the state file is committed last. This keeps each GitHub push smaller when one run finds several PDFs.
 - If copying or SMTP notification fails, it does not commit new PDFs or mark unsent items as processed, so a later run can retry.
 
 `LOOKBACK_MESSAGES` rechecks recent channel messages so comments added after a previous scan can still be matched.
