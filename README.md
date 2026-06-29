@@ -16,7 +16,7 @@ Set these in **Settings -> Secrets and variables -> Actions -> Secrets**:
 - `SMTP_USERNAME`
 - `SMTP_PASSWORD`
 - `MAIL_FROM`
-- `MAIL_TO`
+- `MAIL_TO`, unless every `TELEGRAM_SOURCES` group has its own `mail_to`
 
 Optional mail secrets:
 
@@ -39,7 +39,7 @@ Set these in **Settings -> Secrets and variables -> Actions -> Variables** when 
 - `PUBLIC_BASE_URL` defaults to the current repository raw URL
 - `MAX_REPO_FILE_MB` defaults to `95`, to stay below GitHub's 100 MiB hard file limit
 
-Use `TELEGRAM_SOURCES` to scan multiple chats with different regular expressions:
+Use `TELEGRAM_SOURCES` to scan multiple chats with different regular expressions and send all matches to the default `MAIL_TO`:
 
 ```json
 [
@@ -53,6 +53,37 @@ Use `TELEGRAM_SOURCES` to scan multiple chats with different regular expressions
   }
 ]
 ```
+
+Use grouped `TELEGRAM_SOURCES` when different chats or keywords should notify different recipients:
+
+```json
+[
+  {
+    "mail_to": "a@example.com",
+    "sources": [
+      {
+        "chat_id": "QiKan2026",
+        "match_regex": "财新周刊|财新"
+      },
+      {
+        "chat_id": "AnotherChannel",
+        "match_regex": "#资料|#pdf|课程"
+      }
+    ]
+  },
+  {
+    "mail_to": "b@example.com,c@example.com",
+    "sources": [
+      {
+        "chat_id": "MagazineChannel",
+        "match_regex": "经济学人|The Economist"
+      }
+    ]
+  }
+]
+```
+
+`mail_cc` and `mail_bcc` can also be set on each group. If the same PDF matches multiple recipient groups, each group receives its own notification while the PDF file is saved only once.
 
 For a single chat, the legacy `TELEGRAM_CHAT_ID` and `MATCH_REGEX` secrets still work. `MATCH_REGEX` is a normal Python regular expression. Hashtags are just text, so a rule such as `#资料|#pdf|invoice` works.
 

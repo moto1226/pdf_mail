@@ -42,6 +42,14 @@ def split_addresses(value: str) -> list[str]:
     return [part.strip() for part in re.split(r"[,;]", value) if part.strip()]
 
 
+def recipient_tuple(item: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(item.get("mail_to") or env("MAIL_TO")),
+        str(item.get("mail_cc") or env("MAIL_CC")),
+        str(item.get("mail_bcc") or env("MAIL_BCC")),
+    )
+
+
 def safe_filename(value: str) -> str:
     cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", value).strip(" .")
     return cleaned or "document.pdf"
@@ -92,6 +100,9 @@ def copy_pdf_to_repo(item: dict[str, Any]) -> dict[str, Any]:
         "file_name": item.get("file_name") or source.name,
         "file_size": target.stat().st_size,
         "chat_id": item.get("chat_id", ""),
+        "mail_to": item.get("mail_to", ""),
+        "mail_cc": item.get("mail_cc", ""),
+        "mail_bcc": item.get("mail_bcc", ""),
         "source_message_id": item.get("source_message_id", ""),
         "pdf_message_id": item.get("pdf_message_id", ""),
         "matches": item.get("matches", []),
@@ -186,15 +197,15 @@ def build_html_body(files: list[dict[str, Any]]) -> str:
 </html>"""
 
 
-def send_email(subject: str, text_body: str, html_body: str) -> None:
-    required = ["SMTP_SERVER", "SMTP_USERNAME", "SMTP_PASSWORD", "MAIL_FROM", "MAIL_TO"]
+def send_email(subject: str, text_body: str, html_body: str, mail_to: str, mail_cc: str = "", mail_bcc: str = "") -> None:
+    required = ["SMTP_SERVER", "SMTP_USERNAME", "SMTP_PASSWORD", "MAIL_FROM"]
     missing = [name for name in required if not env(name)]
     if missing:
         raise RuntimeError(f"missing required mail environment variable(s): {', '.join(missing)}")
 
-    to_addrs = split_addresses(env("MAIL_TO"))
-    cc_addrs = split_addresses(env("MAIL_CC"))
-    bcc_addrs = split_addresses(env("MAIL_BCC"))
+    to_addrs = split_addresses(mail_to)
+    cc_addrs = split_addresses(mail_cc)
+    bcc_addrs = split_addresses(mail_bcc)
     recipients = to_addrs + cc_addrs + bcc_addrs
     if not recipients:
         raise RuntimeError("no mail recipients configured")
@@ -234,10 +245,18 @@ def main() -> None:
 
     saved_files = [copy_pdf_to_repo(item) for item in items]
     subject_prefix = env("MAIL_SUBJECT_PREFIX", "PDF 更新")
-    subject = f"{subject_prefix}：{len(saved_files)} 个新文件"
-    send_email(subject, build_text_body(saved_files), build_html_body(saved_files))
-    write_sent_keys([item["key"] for item in saved_files])
-    print(f"saved {len(saved_files)} PDF file(s) and sent one notification email")
+    sent_keys: list[str] = []
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for item in saved_files:
+        grouped.setdefault(recipient_tuple(item), []).append(item)
+
+    for (mail_to, mail_cc, mail_bcc), group_files in grouped.items():
+        subject = f"{subject_prefix}：{len(group_files)} 个新文件"
+        send_email(subject, build_text_body(group_files), build_html_body(group_files), mail_to, mail_cc, mail_bcc)
+        sent_keys.extend(item["key"] for item in group_files)
+        write_sent_keys(sent_keys)
+
+    print(f"saved {len(saved_files)} PDF file(s) and sent {len(grouped)} notification email(s)")
 
 
 if __name__ == "__main__":

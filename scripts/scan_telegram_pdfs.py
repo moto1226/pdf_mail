@@ -126,6 +126,17 @@ def prepare_session_file(session_dir: Path) -> None:
     (session_dir / "pdf_mail.session").write_bytes(base64.b64decode(encoded))
 
 
+def source_with_recipients(source: dict[str, Any], recipients: dict[str, str] | None = None) -> dict[str, str]:
+    recipients = recipients or {}
+    return {
+        "chat_id": str(source.get("chat_id", "")).strip(),
+        "match_regex": str(source.get("match_regex", "")).strip(),
+        "mail_to": str(source.get("mail_to", recipients.get("mail_to", ""))).strip(),
+        "mail_cc": str(source.get("mail_cc", recipients.get("mail_cc", ""))).strip(),
+        "mail_bcc": str(source.get("mail_bcc", recipients.get("mail_bcc", ""))).strip(),
+    }
+
+
 def load_sources() -> list[dict[str, str]]:
     configured = env("TELEGRAM_SOURCES")
     if configured:
@@ -139,18 +150,52 @@ def load_sources() -> list[dict[str, str]]:
         for index, source in enumerate(raw_sources, start=1):
             if not isinstance(source, dict):
                 raise SystemExit(f"TELEGRAM_SOURCES item {index} must be an object")
-            chat_id = str(source.get("chat_id", "")).strip()
-            match_regex = str(source.get("match_regex", "")).strip()
-            if not chat_id or not match_regex:
+            if "sources" in source:
+                recipients = {
+                    "mail_to": str(source.get("mail_to", "")).strip(),
+                    "mail_cc": str(source.get("mail_cc", "")).strip(),
+                    "mail_bcc": str(source.get("mail_bcc", "")).strip(),
+                }
+                raw_group_sources = source.get("sources")
+                if not recipients["mail_to"]:
+                    raise SystemExit(f"TELEGRAM_SOURCES group {index} needs mail_to")
+                if not isinstance(raw_group_sources, list) or not raw_group_sources:
+                    raise SystemExit(f"TELEGRAM_SOURCES group {index} needs a non-empty sources array")
+                for source_index, group_source in enumerate(raw_group_sources, start=1):
+                    if not isinstance(group_source, dict):
+                        raise SystemExit(f"TELEGRAM_SOURCES group {index} source {source_index} must be an object")
+                    parsed = source_with_recipients(group_source, recipients)
+                    if not parsed["chat_id"] or not parsed["match_regex"]:
+                        raise SystemExit(
+                            f"TELEGRAM_SOURCES group {index} source {source_index} needs chat_id and match_regex"
+                        )
+                    sources.append(parsed)
+                continue
+
+            parsed = source_with_recipients(source)
+            if not parsed["chat_id"] or not parsed["match_regex"]:
                 raise SystemExit(f"TELEGRAM_SOURCES item {index} needs chat_id and match_regex")
-            sources.append({"chat_id": chat_id, "match_regex": match_regex})
+            sources.append(parsed)
         return sources
 
     chat_id = env("TELEGRAM_CHAT_ID")
     match_regex = env("MATCH_REGEX")
     if chat_id and match_regex:
-        return [{"chat_id": chat_id, "match_regex": match_regex}]
+        return [{"chat_id": chat_id, "match_regex": match_regex, "mail_to": "", "mail_cc": "", "mail_bcc": ""}]
     raise SystemExit("Set TELEGRAM_SOURCES, or set both TELEGRAM_CHAT_ID and MATCH_REGEX")
+
+
+def recipient_key(source: dict[str, str]) -> str:
+    mail_to = source.get("mail_to", "")
+    if not mail_to:
+        return "default"
+    return "|".join([mail_to, source.get("mail_cc", ""), source.get("mail_bcc", "")])
+
+
+def notification_identity(source: dict[str, str], pdf_key: str) -> str:
+    if not source.get("mail_to"):
+        return pdf_key
+    return f"{recipient_key(source)}::{pdf_key}"
 
 
 async def scan_source(
@@ -163,6 +208,7 @@ async def scan_source(
     reply_limit: int,
     max_processed: int,
     flags: int,
+    scan_from_message_id: int,
 ) -> list[dict[str, Any]]:
     chat_id = source["chat_id"]
     match_regex = source["match_regex"]
@@ -171,9 +217,8 @@ async def scan_source(
     chat_state = state.setdefault("chats", {}).setdefault(chat_id, {})
     processed = list(dict.fromkeys(chat_state.get("processed", [])))
     processed_set = set(processed)
-    last_message_id = int(chat_state.get("last_message_id", 0))
     items: list[dict[str, Any]] = []
-    max_seen = last_message_id
+    max_seen = scan_from_message_id
 
     history = []
     async for message in client.get_chat_history(chat_id, limit=scan_limit):
@@ -183,7 +228,7 @@ async def scan_source(
         max_seen = max(max_seen, max(msg.id for msg in history))
 
     recent_ids = {msg.id for msg in history[-lookback_messages:]} if lookback_messages > 0 else set()
-    candidates = [msg for msg in history if msg.id > last_message_id or msg.id in recent_ids]
+    candidates = [msg for msg in history if msg.id > scan_from_message_id or msg.id in recent_ids]
 
     for message in candidates:
         thread_messages = [message]
@@ -203,7 +248,8 @@ async def scan_source(
             continue
 
         for pdf_message in pdf_messages:
-            key = pdf_identity(chat_id, pdf_message)
+            pdf_key = pdf_identity(chat_id, pdf_message)
+            key = notification_identity(source, pdf_key)
             if key in processed_set:
                 continue
             path = await download_pdf(client, pdf_message, chat_id, download_dir)
@@ -211,6 +257,10 @@ async def scan_source(
             document = pdf_message.document
             item = {
                 "key": key,
+                "pdf_key": pdf_key,
+                "mail_to": source.get("mail_to", ""),
+                "mail_cc": source.get("mail_cc", ""),
+                "mail_bcc": source.get("mail_bcc", ""),
                 "chat_id": chat_id,
                 "source_message_id": message.id,
                 "pdf_message_id": pdf_message.id,
@@ -251,6 +301,10 @@ async def scan() -> None:
         flags |= re.IGNORECASE
 
     state = load_json(state_file, {"version": 1, "chats": {}})
+    scan_from_by_chat = {
+        source["chat_id"]: int(state.setdefault("chats", {}).setdefault(source["chat_id"], {}).get("last_message_id", 0))
+        for source in sources
+    }
 
     prepare_session_file(session_dir)
     client_kwargs: dict[str, Any] = {
@@ -281,6 +335,7 @@ async def scan() -> None:
                     reply_limit,
                     max_processed,
                     flags,
+                    scan_from_by_chat[source["chat_id"]],
                 )
             )
 
