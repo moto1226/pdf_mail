@@ -40,6 +40,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
           TELEGRAM_SESSION_FILE_B64: ${{ secrets.TELEGRAM_SESSION_FILE_B64 }}
+          TELEGRAM_SOURCES: ${{ secrets.TELEGRAM_SOURCES || vars.TELEGRAM_SOURCES }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || vars.TELEGRAM_CHAT_ID }}
           MATCH_REGEX: ${{ secrets.MATCH_REGEX || vars.MATCH_REGEX }}
           SCAN_LIMIT: ${{ github.event.inputs.scan_limit || vars.SCAN_LIMIT || '200' }}

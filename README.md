@@ -11,8 +11,7 @@ Set these in **Settings -> Secrets and variables -> Actions -> Secrets**:
 - `TELEGRAM_API_ID`
 - `TELEGRAM_API_HASH`
 - `TELEGRAM_SESSION_STRING` or `TELEGRAM_SESSION_FILE_B64` or `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_CHAT_ID`
-- `MATCH_REGEX`
+- `TELEGRAM_SOURCES`, or the legacy pair `TELEGRAM_CHAT_ID` and `MATCH_REGEX`
 - `SMTP_SERVER`
 - `SMTP_USERNAME`
 - `SMTP_PASSWORD`
@@ -40,7 +39,22 @@ Set these in **Settings -> Secrets and variables -> Actions -> Variables** when 
 - `PUBLIC_BASE_URL` defaults to the current repository raw URL
 - `MAX_REPO_FILE_MB` defaults to `95`, to stay below GitHub's 100 MiB hard file limit
 
-`MATCH_REGEX` is a normal Python regular expression. Hashtags are just text, so a rule such as `#资料|#pdf|invoice` works.
+Use `TELEGRAM_SOURCES` to scan multiple chats with different regular expressions:
+
+```json
+[
+  {
+    "chat_id": "QiKan2026",
+    "match_regex": "财新周刊|财新"
+  },
+  {
+    "chat_id": "AnotherChannel",
+    "match_regex": "#资料|#pdf|课程"
+  }
+]
+```
+
+For a single chat, the legacy `TELEGRAM_CHAT_ID` and `MATCH_REGEX` secrets still work. `MATCH_REGEX` is a normal Python regular expression. Hashtags are just text, so a rule such as `#资料|#pdf|invoice` works.
 
 ## Schedule
 

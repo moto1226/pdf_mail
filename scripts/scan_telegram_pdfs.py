@@ -126,13 +126,115 @@ def prepare_session_file(session_dir: Path) -> None:
     (session_dir / "pdf_mail.session").write_bytes(base64.b64decode(encoded))
 
 
+def load_sources() -> list[dict[str, str]]:
+    configured = env("TELEGRAM_SOURCES")
+    if configured:
+        try:
+            raw_sources = json.loads(configured)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"TELEGRAM_SOURCES is not valid JSON: {exc}") from exc
+        if not isinstance(raw_sources, list) or not raw_sources:
+            raise SystemExit("TELEGRAM_SOURCES must be a non-empty JSON array")
+        sources = []
+        for index, source in enumerate(raw_sources, start=1):
+            if not isinstance(source, dict):
+                raise SystemExit(f"TELEGRAM_SOURCES item {index} must be an object")
+            chat_id = str(source.get("chat_id", "")).strip()
+            match_regex = str(source.get("match_regex", "")).strip()
+            if not chat_id or not match_regex:
+                raise SystemExit(f"TELEGRAM_SOURCES item {index} needs chat_id and match_regex")
+            sources.append({"chat_id": chat_id, "match_regex": match_regex})
+        return sources
+
+    chat_id = env("TELEGRAM_CHAT_ID")
+    match_regex = env("MATCH_REGEX")
+    if chat_id and match_regex:
+        return [{"chat_id": chat_id, "match_regex": match_regex}]
+    raise SystemExit("Set TELEGRAM_SOURCES, or set both TELEGRAM_CHAT_ID and MATCH_REGEX")
+
+
+async def scan_source(
+    client: Client,
+    source: dict[str, str],
+    state: dict[str, Any],
+    download_dir: Path,
+    scan_limit: int,
+    lookback_messages: int,
+    reply_limit: int,
+    max_processed: int,
+    flags: int,
+) -> list[dict[str, Any]]:
+    chat_id = source["chat_id"]
+    match_regex = source["match_regex"]
+    pattern = re.compile(match_regex, flags)
+
+    chat_state = state.setdefault("chats", {}).setdefault(chat_id, {})
+    processed = list(dict.fromkeys(chat_state.get("processed", [])))
+    processed_set = set(processed)
+    last_message_id = int(chat_state.get("last_message_id", 0))
+    items: list[dict[str, Any]] = []
+    max_seen = last_message_id
+
+    history = []
+    async for message in client.get_chat_history(chat_id, limit=scan_limit):
+        history.append(message)
+    history.sort(key=lambda msg: msg.id)
+    if history:
+        max_seen = max(max_seen, max(msg.id for msg in history))
+
+    recent_ids = {msg.id for msg in history[-lookback_messages:]} if lookback_messages > 0 else set()
+    candidates = [msg for msg in history if msg.id > last_message_id or msg.id in recent_ids]
+
+    for message in candidates:
+        thread_messages = [message]
+        thread_messages.extend(await get_replies(client, chat_id, message.id, reply_limit))
+
+        matches = []
+        pdf_messages = []
+        for idx, thread_message in enumerate(thread_messages):
+            location = "main" if idx == 0 else "comment"
+            found = match_info(pattern, thread_message, location)
+            if found:
+                matches.append(found)
+            if is_pdf(thread_message):
+                pdf_messages.append(thread_message)
+
+        if not matches or not pdf_messages:
+            continue
+
+        for pdf_message in pdf_messages:
+            key = pdf_identity(chat_id, pdf_message)
+            if key in processed_set:
+                continue
+            path = await download_pdf(client, pdf_message, chat_id, download_dir)
+            stat = Path(path).stat()
+            document = pdf_message.document
+            item = {
+                "key": key,
+                "chat_id": chat_id,
+                "source_message_id": message.id,
+                "pdf_message_id": pdf_message.id,
+                "file_name": getattr(document, "file_name", None) or Path(path).name,
+                "file_size": stat.st_size,
+                "path": str(Path(path).relative_to(REPO_ROOT)).replace("\\", "/"),
+                "matches": matches,
+            }
+            items.append(item)
+            processed.append(key)
+            processed_set.add(key)
+
+    chat_state["last_message_id"] = max_seen
+    chat_state["processed"] = processed[-max_processed:]
+    print(f"{chat_id}: found {len(items)} pending PDF file(s)")
+    return items
+
+
 async def scan() -> None:
     api_id = env_int("TELEGRAM_API_ID", 0)
     api_hash = env("TELEGRAM_API_HASH")
-    chat_id = env("TELEGRAM_CHAT_ID")
-    match_regex = env("MATCH_REGEX")
-    if not api_id or not api_hash or not chat_id or not match_regex:
-        raise SystemExit("TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_CHAT_ID, and MATCH_REGEX are required")
+    if not api_id or not api_hash:
+        raise SystemExit("TELEGRAM_API_ID and TELEGRAM_API_HASH are required")
+    sources = load_sources()
 
     state_file = REPO_ROOT / env("STATE_FILE", "state/pdf-mail-state.json")
     next_state_file = REPO_ROOT / env("NEXT_STATE_FILE", "run/next-state.json")
@@ -147,13 +249,8 @@ async def scan() -> None:
     flags = re.MULTILINE
     if env("MATCH_IGNORE_CASE", "true").lower() != "false":
         flags |= re.IGNORECASE
-    pattern = re.compile(match_regex, flags)
 
     state = load_json(state_file, {"version": 1, "chats": {}})
-    chat_state = state.setdefault("chats", {}).setdefault(chat_id, {})
-    processed = list(dict.fromkeys(chat_state.get("processed", [])))
-    processed_set = set(processed)
-    last_message_id = int(chat_state.get("last_message_id", 0))
 
     prepare_session_file(session_dir)
     client_kwargs: dict[str, Any] = {
@@ -170,62 +267,26 @@ async def scan() -> None:
 
     download_dir.mkdir(parents=True, exist_ok=True)
     items: list[dict[str, Any]] = []
-    max_seen = last_message_id
 
     async with Client("pdf_mail", **client_kwargs) as client:
-        history = []
-        async for message in client.get_chat_history(chat_id, limit=scan_limit):
-            history.append(message)
-        history.sort(key=lambda msg: msg.id)
-        if history:
-            max_seen = max(max_seen, max(msg.id for msg in history))
+        for source in sources:
+            items.extend(
+                await scan_source(
+                    client,
+                    source,
+                    state,
+                    download_dir,
+                    scan_limit,
+                    lookback_messages,
+                    reply_limit,
+                    max_processed,
+                    flags,
+                )
+            )
 
-        recent_ids = {msg.id for msg in history[-lookback_messages:]} if lookback_messages > 0 else set()
-        candidates = [msg for msg in history if msg.id > last_message_id or msg.id in recent_ids]
-
-        for message in candidates:
-            thread_messages = [message]
-            thread_messages.extend(await get_replies(client, chat_id, message.id, reply_limit))
-
-            matches = []
-            pdf_messages = []
-            for idx, thread_message in enumerate(thread_messages):
-                location = "main" if idx == 0 else "comment"
-                found = match_info(pattern, thread_message, location)
-                if found:
-                    matches.append(found)
-                if is_pdf(thread_message):
-                    pdf_messages.append(thread_message)
-
-            if not matches or not pdf_messages:
-                continue
-
-            for pdf_message in pdf_messages:
-                key = pdf_identity(chat_id, pdf_message)
-                if key in processed_set:
-                    continue
-                path = await download_pdf(client, pdf_message, chat_id, download_dir)
-                stat = Path(path).stat()
-                document = pdf_message.document
-                item = {
-                    "key": key,
-                    "chat_id": chat_id,
-                    "source_message_id": message.id,
-                    "pdf_message_id": pdf_message.id,
-                    "file_name": getattr(document, "file_name", None) or Path(path).name,
-                    "file_size": stat.st_size,
-                    "path": str(Path(path).relative_to(REPO_ROOT)).replace("\\", "/"),
-                    "matches": matches,
-                }
-                items.append(item)
-                processed.append(key)
-                processed_set.add(key)
-
-    chat_state["last_message_id"] = max_seen
-    chat_state["processed"] = processed[-max_processed:]
     write_json(next_state_file, state)
     write_json(manifest_file, {"items": items})
-    print(f"found {len(items)} pending PDF file(s)")
+    print(f"found {len(items)} total pending PDF file(s)")
 
 
 if __name__ == "__main__":
