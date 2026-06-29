@@ -84,6 +84,7 @@ Use grouped `TELEGRAM_SOURCES` when different chats or keywords should notify di
 ```
 
 `mail_cc` and `mail_bcc` can also be set on each group. If the same PDF matches multiple recipient groups, each group receives its own notification while the PDF file is saved only once.
+Sources are grouped by `chat_id` at runtime, so the workflow fetches each Telegram chat once per run even if that chat appears in multiple recipient groups.
 
 For a single chat, the legacy `TELEGRAM_CHAT_ID` and `MATCH_REGEX` secrets still work. `MATCH_REGEX` is a normal Python regular expression. Hashtags are just text, so a rule such as `#资料|#pdf|invoice` works.
 

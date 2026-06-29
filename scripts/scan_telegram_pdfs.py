@@ -200,7 +200,8 @@ def notification_identity(source: dict[str, str], pdf_key: str) -> str:
 
 async def scan_source(
     client: Client,
-    source: dict[str, str],
+    chat_id: str,
+    chat_sources: list[dict[str, str]],
     state: dict[str, Any],
     download_dir: Path,
     scan_limit: int,
@@ -210,9 +211,7 @@ async def scan_source(
     flags: int,
     scan_from_message_id: int,
 ) -> list[dict[str, Any]]:
-    chat_id = source["chat_id"]
-    match_regex = source["match_regex"]
-    pattern = re.compile(match_regex, flags)
+    compiled_sources = [(source, re.compile(source["match_regex"], flags)) for source in chat_sources]
 
     chat_state = state.setdefault("chats", {}).setdefault(chat_id, {})
     processed = list(dict.fromkeys(chat_state.get("processed", [])))
@@ -234,49 +233,66 @@ async def scan_source(
         thread_messages = [message]
         thread_messages.extend(await get_replies(client, chat_id, message.id, reply_limit))
 
-        matches = []
         pdf_messages = []
-        for idx, thread_message in enumerate(thread_messages):
-            location = "main" if idx == 0 else "comment"
-            found = match_info(pattern, thread_message, location)
-            if found:
-                matches.append(found)
+        source_matches: list[tuple[dict[str, str], list[dict[str, Any]]]] = []
+        for source, pattern in compiled_sources:
+            matches = []
+            for idx, thread_message in enumerate(thread_messages):
+                location = "main" if idx == 0 else "comment"
+                found = match_info(pattern, thread_message, location)
+                if found:
+                    matches.append(found)
+            if matches:
+                source_matches.append((source, matches))
+
+        for thread_message in thread_messages:
             if is_pdf(thread_message):
                 pdf_messages.append(thread_message)
 
-        if not matches or not pdf_messages:
+        if not source_matches or not pdf_messages:
             continue
 
         for pdf_message in pdf_messages:
             pdf_key = pdf_identity(chat_id, pdf_message)
-            key = notification_identity(source, pdf_key)
-            if key in processed_set:
-                continue
-            path = await download_pdf(client, pdf_message, chat_id, download_dir)
-            stat = Path(path).stat()
+            downloaded_path: str | None = None
+            stat = None
             document = pdf_message.document
-            item = {
-                "key": key,
-                "pdf_key": pdf_key,
-                "mail_to": source.get("mail_to", ""),
-                "mail_cc": source.get("mail_cc", ""),
-                "mail_bcc": source.get("mail_bcc", ""),
-                "chat_id": chat_id,
-                "source_message_id": message.id,
-                "pdf_message_id": pdf_message.id,
-                "file_name": getattr(document, "file_name", None) or Path(path).name,
-                "file_size": stat.st_size,
-                "path": str(Path(path).relative_to(REPO_ROOT)).replace("\\", "/"),
-                "matches": matches,
-            }
-            items.append(item)
-            processed.append(key)
-            processed_set.add(key)
+            for source, matches in source_matches:
+                key = notification_identity(source, pdf_key)
+                if key in processed_set:
+                    continue
+                if downloaded_path is None:
+                    downloaded_path = await download_pdf(client, pdf_message, chat_id, download_dir)
+                    stat = Path(downloaded_path).stat()
+                item = {
+                    "key": key,
+                    "pdf_key": pdf_key,
+                    "mail_to": source.get("mail_to", ""),
+                    "mail_cc": source.get("mail_cc", ""),
+                    "mail_bcc": source.get("mail_bcc", ""),
+                    "chat_id": chat_id,
+                    "source_message_id": message.id,
+                    "pdf_message_id": pdf_message.id,
+                    "file_name": getattr(document, "file_name", None) or Path(downloaded_path).name,
+                    "file_size": stat.st_size,
+                    "path": str(Path(downloaded_path).relative_to(REPO_ROOT)).replace("\\", "/"),
+                    "matches": matches,
+                }
+                items.append(item)
+                processed.append(key)
+                processed_set.add(key)
 
     chat_state["last_message_id"] = max_seen
     chat_state["processed"] = processed[-max_processed:]
     print(f"{chat_id}: found {len(items)} pending PDF file(s)")
     return items
+
+
+def group_sources_by_chat(sources: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for source in sources:
+        grouped.setdefault(source["chat_id"], []).append(source)
+    return grouped
 
 
 async def scan() -> None:
@@ -301,9 +317,10 @@ async def scan() -> None:
         flags |= re.IGNORECASE
 
     state = load_json(state_file, {"version": 1, "chats": {}})
+    sources_by_chat = group_sources_by_chat(sources)
     scan_from_by_chat = {
-        source["chat_id"]: int(state.setdefault("chats", {}).setdefault(source["chat_id"], {}).get("last_message_id", 0))
-        for source in sources
+        chat_id: int(state.setdefault("chats", {}).setdefault(chat_id, {}).get("last_message_id", 0))
+        for chat_id in sources_by_chat
     }
 
     prepare_session_file(session_dir)
@@ -323,11 +340,12 @@ async def scan() -> None:
     items: list[dict[str, Any]] = []
 
     async with Client("pdf_mail", **client_kwargs) as client:
-        for source in sources:
+        for chat_id, chat_sources in sources_by_chat.items():
             items.extend(
                 await scan_source(
                     client,
-                    source,
+                    chat_id,
+                    chat_sources,
                     state,
                     download_dir,
                     scan_limit,
@@ -335,7 +353,7 @@ async def scan() -> None:
                     reply_limit,
                     max_processed,
                     flags,
-                    scan_from_by_chat[source["chat_id"]],
+                    scan_from_by_chat[chat_id],
                 )
             )
 
