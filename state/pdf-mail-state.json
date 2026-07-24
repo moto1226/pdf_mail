@@ -2,7 +2,7 @@
   "version": 1,
   "chats": {
     "QiKan2026": {
-      "last_message_id": 7285,
+      "last_message_id": 7288,
       "processed": [
         "QiKan2026:7040:AgADiSEAArR7YFQ",
         "QiKan2026:7162:AgAD5CIAAs1rQFU",
@@ -39,7 +39,7 @@
       ]
     },
     "sharebooks4you": {
-      "last_message_id": 12811,
+      "last_message_id": 12818,
       "processed": [
         "xupeng970623@gmail.com||::sharebooks4you:1800158:AgADjx0AAqLXCFc",
         "xupeng970623@gmail.com||::sharebooks4you:1801245:AgADLx8AAnOESFQ",
@@ -109,7 +109,7 @@
       ]
     },
     "magazines_file": {
-      "last_message_id": 13654,
+      "last_message_id": 13686,
       "processed": [
         "wyl20250930@gmail.com||::magazines_file:12232:AgADQB0AArtL-VE",
         "wyl20250930@gmail.com||::magazines_file:12256:AgADqR0AAng4-FE",
@@ -132,7 +132,8 @@
         "wyl20250930@gmail.com||::magazines_file:13356:AgADPB0AAlMa0VI",
         "wyl20250930@gmail.com||::magazines_file:13557:AgAD2xsAApaL-VI",
         "wyl20250930@gmail.com||::magazines_file:13602:AgAD4xwAApaLAVM",
-        "wyl20250930@gmail.com||::magazines_file:13611:AgADIx0AApaLAVM"
+        "wyl20250930@gmail.com||::magazines_file:13611:AgADIx0AApaLAVM",
+        "wyl20250930@gmail.com||::magazines_file:13656:AgAD7BwAAgnwGVM"
       ]
     }
   }
