@@ -2,7 +2,7 @@
   "version": 1,
   "chats": {
     "QiKan2026": {
-      "last_message_id": 7309,
+      "last_message_id": 7325,
       "processed": [
         "QiKan2026:7040:AgADiSEAArR7YFQ",
         "QiKan2026:7162:AgAD5CIAAs1rQFU",
@@ -47,7 +47,7 @@
       ]
     },
     "sharebooks4you": {
-      "last_message_id": 13178,
+      "last_message_id": 13229,
       "processed": [
         "xupeng970623@gmail.com||::sharebooks4you:1800158:AgADjx0AAqLXCFc",
         "xupeng970623@gmail.com||::sharebooks4you:1801245:AgADLx8AAnOESFQ",
@@ -76,11 +76,12 @@
         "xupeng970623@gmail.com||::sharebooks4you:1901094:AgAD5hQAAmiCOEQ",
         "xupeng970623@gmail.com||::sharebooks4you:1905578:AgADqRQAAmiCOEQ",
         "xupeng970623@gmail.com||::sharebooks4you:1907194:AgAD2hQAAmiCOEQ",
-        "xupeng970623@gmail.com||::sharebooks4you:1908202:AgADrRQAAmiCOEQ"
+        "xupeng970623@gmail.com||::sharebooks4you:1908202:AgADrRQAAmiCOEQ",
+        "xupeng970623@gmail.com||::sharebooks4you:1915673:AgADDAgAAk-k2EQ"
       ]
     },
     "kkfxzy": {
-      "last_message_id": 2694,
+      "last_message_id": 2697,
       "processed": [
         "xupeng970623@gmail.com||::kkfxzy:6837:AgADOAcAAkFqAUU",
         "xupeng970623@gmail.com||::kkfxzy:6836:AgADNwcAAkFqAUU",
@@ -144,7 +145,7 @@
       ]
     },
     "magazines_file": {
-      "last_message_id": 16299,
+      "last_message_id": 16340,
       "processed": [
         "wyl20250930@gmail.com||::magazines_file:12232:AgADQB0AArtL-VE",
         "wyl20250930@gmail.com||::magazines_file:12256:AgADqR0AAng4-FE",
@@ -214,7 +215,10 @@
         "wyl20250930@gmail.com||::magazines_file:16234:AgADkCAAAigOcVE",
         "wyl20250930@gmail.com||::magazines_file:16251:AgADTSEAAigOcVE",
         "wyl20250930@gmail.com||::magazines_file:16252:AgADUiEAAigOcVE",
-        "wyl20250930@gmail.com||::magazines_file:16289:AgADxCMAAigOeVE"
+        "wyl20250930@gmail.com||::magazines_file:16289:AgADxCMAAigOeVE",
+        "wyl20250930@gmail.com||::magazines_file:16307:AgADvR8AAv9VeFE",
+        "wyl20250930@gmail.com||::magazines_file:16308:AgAD7x8AAv9VeFE",
+        "wyl20250930@gmail.com||::magazines_file:16309:AgAD8h8AAv9VeFE"
       ]
     }
   }
