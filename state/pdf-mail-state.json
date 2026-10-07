@@ -2,7 +2,7 @@
   "version": 1,
   "chats": {
     "QiKan2026": {
-      "last_message_id": 7345,
+      "last_message_id": 7348,
       "processed": [
         "QiKan2026:7040:AgADiSEAArR7YFQ",
         "QiKan2026:7162:AgAD5CIAAs1rQFU",
@@ -65,7 +65,7 @@
       ]
     },
     "sharebooks4you": {
-      "last_message_id": 13290,
+      "last_message_id": 13297,
       "processed": [
         "xupeng970623@gmail.com||::sharebooks4you:1800158:AgADjx0AAqLXCFc",
         "xupeng970623@gmail.com||::sharebooks4you:1801245:AgADLx8AAnOESFQ",
@@ -102,7 +102,7 @@
       ]
     },
     "kkfxzy": {
-      "last_message_id": 2728,
+      "last_message_id": 2788,
       "processed": [
         "xupeng970623@gmail.com||::kkfxzy:6837:AgADOAcAAkFqAUU",
         "xupeng970623@gmail.com||::kkfxzy:6836:AgADNwcAAkFqAUU",
@@ -162,11 +162,15 @@
         "xupeng970623@gmail.com||::kkfxzy:8845:AgADcgkAAi8JaEU",
         "xupeng970623@gmail.com||::kkfxzy:8852:AgADeQkAAi8JaEU",
         "xupeng970623@gmail.com||::kkfxzy:8853:AgADegkAAi8JaEU",
-        "xupeng970623@gmail.com||::kkfxzy:8854:AgADewkAAi8JaEU"
+        "xupeng970623@gmail.com||::kkfxzy:8854:AgADewkAAi8JaEU",
+        "xupeng970623@gmail.com||::kkfxzy:9111:AgADjAYAAgV9MUY",
+        "xupeng970623@gmail.com||::kkfxzy:9113:AgADoAYAAgV9MUY",
+        "xupeng970623@gmail.com||::kkfxzy:9114:AgADoQYAAgV9MUY",
+        "xupeng970623@gmail.com||::kkfxzy:9115:AgADowYAAgV9MUY"
       ]
     },
     "magazines_file": {
-      "last_message_id": 16785,
+      "last_message_id": 16838,
       "processed": [
         "wyl20250930@gmail.com||::magazines_file:12232:AgADQB0AArtL-VE",
         "wyl20250930@gmail.com||::magazines_file:12256:AgADqR0AAng4-FE",
