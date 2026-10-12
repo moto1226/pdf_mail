@@ -2,7 +2,7 @@
   "version": 1,
   "chats": {
     "QiKan2026": {
-      "last_message_id": 7364,
+      "last_message_id": 7375,
       "processed": [
         "QiKan2026:7040:AgADiSEAArR7YFQ",
         "QiKan2026:7162:AgAD5CIAAs1rQFU",
@@ -66,7 +66,7 @@
       ]
     },
     "sharebooks4you": {
-      "last_message_id": 13323,
+      "last_message_id": 13329,
       "processed": [
         "xupeng970623@gmail.com||::sharebooks4you:1800158:AgADjx0AAqLXCFc",
         "xupeng970623@gmail.com||::sharebooks4you:1801245:AgADLx8AAnOESFQ",
@@ -101,7 +101,9 @@
         "xupeng970623@gmail.com||::sharebooks4you:1923925:AgAD5AcAAk-k2EQ",
         "xupeng970623@gmail.com||::sharebooks4you:1924803:AgAD6wcAAk-k2EQ",
         "xupeng970623@gmail.com||::sharebooks4you:1930004:AgAD4hQAAmiCOEQ",
-        "xupeng970623@gmail.com||::sharebooks4you:1932044:AgADEAgAAk-k2EQ"
+        "xupeng970623@gmail.com||::sharebooks4you:1932044:AgADEAgAAk-k2EQ",
+        "xupeng970623@gmail.com||::sharebooks4you:1933119:AgAD4ggAAtUHwEU",
+        "xupeng970623@gmail.com||::sharebooks4you:1934278:AgAD5ggAAtUHwEU"
       ]
     },
     "kkfxzy": {
@@ -174,7 +176,7 @@
       ]
     },
     "magazines_file": {
-      "last_message_id": 17080,
+      "last_message_id": 17155,
       "processed": [
         "wyl20250930@gmail.com||::magazines_file:12232:AgADQB0AArtL-VE",
         "wyl20250930@gmail.com||::magazines_file:12256:AgADqR0AAng4-FE",
@@ -255,7 +257,10 @@
         "wyl20250930@gmail.com||::magazines_file:16858:AgADiCUAArwiOFI",
         "wyl20250930@gmail.com||::magazines_file:16894:AgADWSQAArwiQFI",
         "wyl20250930@gmail.com||::magazines_file:16961:AgAD2R8AAoZdSVI",
-        "wyl20250930@gmail.com||::magazines_file:17027:AgAD1SEAAgTUWVI"
+        "wyl20250930@gmail.com||::magazines_file:17027:AgAD1SEAAgTUWVI",
+        "wyl20250930@gmail.com||::magazines_file:17131:AgADdh4AAltCaVI",
+        "wyl20250930@gmail.com||::magazines_file:17148:AgADMh8AAltCaVI",
+        "wyl20250930@gmail.com||::magazines_file:17155:AgADQB8AAltCaVI"
       ]
     }
   }
